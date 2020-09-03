@@ -71,42 +71,46 @@ function asyncForwardWrapper(net) {
 
 async function loadAndComputeCaffeLayer(url, inputSize) {
     const path = await loadModel(url);
-    let net, net1;
-    const input = new cv.Mat(inputSize, cv.CV_32F);
+    let net;
+    const input = cv.Mat.MatND(inputSize, cv.CV_32F);
 
     net = cv.readNetFromCaffe(path.modelPath, '');
     net.setInput(input);
-    net.setPreferableBackend(cv.DNN_BACKEND_WGPU);
-    net.setPreferableTarget(cv.DNN_TARGET_WGPU);
+    net.setPreferableBackend(cv.DNN_BACKEND_WEBGPU);
+    net.setPreferableTarget(cv.DNN_TARGET_WEBGPU);
     const start = performance.now();
     const out = await asyncForwardWrapper(net);
     const time = (performance.now() - start).toFixed(3);
     console.log(`WebGPU backend time cost ${time} ms.`);
 
-    net1 = cv.readNetFromCaffe(path.modelPath, '');
-    net1.setInput(input);
-    const start1 = performance.now();
-    const out1 = net1.forward();
-    const time1 =(performance.now() - start1).toFixed(3);
-    console.log(`CPU backend time cost ${time1} ms.`);
-
     input.delete();
     net.delete();
-    net1.delete();
-    return [out, out1];
+    return out;
 }
 
 QUnit.test('test_layer_softmax', async function(assert) {
+    const layer_softmax = "https://raw.githubusercontent.com/opencv/opencv_extra/master/testdata/dnn/layers/layer_softmax.prototxt";
+    const inputSize = [2, 6, 75, 113];
+    const url = {
+        modelUrl: layer_softmax,
+        configUrl: ""
+    };
+
+    const path = await loadModel(url);
+    let net;
+    const input = cv.Mat.MatND(inputSize, cv.CV_32F);
+    net = cv.readNetFromCaffe(path.modelPath, '');
+    net.setInput(input);
+    const start = performance.now();
+    const out = net.forward();
+    const time = (performance.now() - start).toFixed(3);
+    console.log(`CPUbackend time cost ${time} ms.`);
+    assert.ok(out.empty() === false);
+
     const adapter = await navigator.gpu.requestAdapter();
     const device = await adapter.requestDevice();
     Module.preinitializedWebGPUDevice = device;
-    const layer_lrn_spatial = "https://raw.githubusercontent.com/opencv/opencv_extra/master/testdata/dnn/layers/layer_softmax.prototxt";
-    const inputSize = [2, 6, 75, 113];
-    const url = {
-        modelUrl: layer_lrn_spatial,
-        configUrl: ""
-    };
-    const [out, out1] = await loadAndComputeCaffeLayer(url, inputSize);
+    const out1 = await loadAndComputeCaffeLayer(url, inputSize);
 
     const EPSILON = 0.00001;
     const data1 = out.data;
